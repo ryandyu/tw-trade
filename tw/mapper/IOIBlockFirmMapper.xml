@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.sumridge.tw.mapper.IOIBlockFirmMapper">
+	<resultMap id="result" type="com.sumridge.tw.bean.TWebBlockFirm">
+		<result property = "account" column = "ACCOUNT"/>
+	</resultMap>
+	<select id="findBlockFirm" parameterType="String" resultMap="result" >
+		select * from TWEB_BLOCK_FIRMS  where ACCOUNT=#{account};
+	</select>
+</mapper>
+	

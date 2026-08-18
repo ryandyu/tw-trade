@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.sumridge.tw.mapper.AllocationMapper">
+
+	<insert id="insert" parameterType="com.sumridge.tw.bean.Allocation">
+		<![CDATA[
+		insert into smrd_allocation (	tradeDate, 
+										platformId, 
+										execId, 
+										allocId, 
+										orderId, 
+										clOrdId, 
+										allocStatus, 
+										customer, 
+										clientId, 
+										alertCode, 
+										shortName, 
+										realSize, 
+										principal, 
+										accruedInterest, 
+										netMoney, 
+										side)
+		values (	#{tradeDate,jdbcType=DATE}, 
+					#{platformId,jdbcType=INTEGER}, 
+					#{execId,jdbcType=VARCHAR}, 
+					#{allocId,jdbcType=VARCHAR}, 
+					#{orderId,jdbcType=VARCHAR}, 
+					#{clOrdId,jdbcType=VARCHAR}, 
+					#{allocStatus,jdbcType=VARCHAR}, 
+					#{customer,jdbcType=VARCHAR}, 
+					#{clientId,jdbcType=VARCHAR}, 
+					#{alertCode,jdbcType=VARCHAR}, 
+					#{shortName,jdbcType=VARCHAR}, 
+					#{realSize,jdbcType=INTEGER}, 
+					#{principal,jdbcType=NUMERIC}, 
+					#{accruedInterest,jdbcType=NUMERIC}, 
+					#{netMoney,jdbcType=NUMERIC}, 
+					#{side,jdbcType=CHAR} )
+		]]>
+	</insert>
+
+	<update id="update" parameterType="com.sumridge.tw.bean.Allocation">
+		update smrd_allocation
+		<set>
+			allocStatus=#{allocStatus,jdbcType=VARCHAR},
+			customer=#{customer,jdbcType=VARCHAR},
+			clientId=#{clientId,jdbcType=VARCHAR},
+			alertCode=#{alertCode,jdbcType=VARCHAR},
+			shortName=#{shortName,jdbcType=VARCHAR},
+			realSize=#{realSize,jdbcType=INTEGER},
+			principal=#{principal,jdbcType=NUMERIC},
+			accruedInterest=#{accruedInterest,jdbcType=NUMERIC},
+			netMoney=#{netMoney,jdbcType=NUMERIC}
+		</set>
+		<where>
+			tradeDate=#{tradeDate,jdbcType=DATE} and
+			platformId=#{platformId,jdbcType=INTEGER} and
+			execId=#{execId,jdbcType=VARCHAR} and
+			allocId=#{allocId,jdbcType=VARCHAR} and
+			side=#{side,jdbcType=CHAR}
+		</where>
+	</update>
+
+	<delete id="delete" parameterType="com.sumridge.tw.bean.Allocation">
+		delete from smrd_allocation
+		<where>
+			tradeDate=#{tradeDate,jdbcType=DATE} and
+			platformId=#{platformId,jdbcType=INTEGER} and
+			execId=#{execId,jdbcType=VARCHAR} and
+			allocId=#{allocId,jdbcType=VARCHAR} and
+			side=#{side,jdbcType=CHAR}
+		</where>
+	</delete>
+
+</mapper>
+	
