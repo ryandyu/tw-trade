@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ant:project name="tw-trade" default="quote" 
+	xmlns:ac="antlib:net.sf.antcontrib"
+	xmlns:sumridge="antlib:com.sumridge.antbuild"
+	xmlns:ivy="antlib:org.apache.ivy.ant"
+	xmlns:ant="antlib:org.apache.tools.ant">
+
+	<sumridge:launcher />
+
+	<!-- GLOBAL SYSTEM PROPERTIES -->
+	<!-- to include system properties from client properties file like email, etc. -->
+	<ant:property file="${sumridge.system.app.properties}" />
+	<ant:property name="sysprop.app.properties" value="${sumridge.system.app.properties}" />
+
+	<ant:property name="sysprop.rootDir" value="${rootDir}" />
+        <ant:property name="sysprop.mq.provider" value="${mq.provider}" />
+        <ant:property name="sysprop.sumridge.etrade.ws.url" value="${sumridge.etrade.ws.url}" />
+        <ant:property name="sysprop.smrd.db.interface" value="${smrd.db.interface}" />
+	<ant:property name="sysprop.smrd.dbtype" value="${smrd.dbtype}" />
+
+    	<ant:property name="sysprop.smtp.host" value="${smrd.smtp.host}" />
+    	<ant:property name="sysprop.smrd.log4j.pattern" value="yyyy-MM-dd" />
+    	<ant:property name="sysprop.smrd.log4j.threshold" value="INFO" />
+
+        <ant:property name="sysprop.oracle.jdbc.defaultRowPrefetch" value="1000" />
+        <ant:property name="sysprop.oracle.jdbc.defaultBatchValue"  value="1000" />
+
+	<ant:propertyset id="context.properties">
+		<ant:propertyref prefix="sysprop" />
+		<ant:mapper type="glob" from="sysprop.*" to="*" />
+	</ant:propertyset>
+
+    	<ant:target name="quote">
+          <run metaproject="sumridge"
+            project="tw-trade"
+            release="1.0+"
+            classname="org.apache.camel.spring.Main"
+            jvm="${sumridge.system.jdk18.java.jvm}"
+            output="${rootDir}/logs/tw-quote-spawn.log"
+            spawn="true" >
+            <settings>
+                <ant:syspropertyset>
+                    <ant:propertyset refid="context.properties" />
+                </ant:syspropertyset>
+
+                <ant:sysproperty key="smrd.qfj.cfg" value="qfj-tw-quote.cfg" />
+
+                <ant:sysproperty key="fid.jdbc.name" value="smrd" />
+                <ant:sysproperty key="fid.jdbc.dbconnections" value="2" />
+                <ant:sysproperty key="logback.configurationFile" value="logback.xml" />
+
+                <ant:arg line="-ac tw-trade.xml" />
+
+                <ant:jvmarg value="-Dappid=tw.quote.${smrd.run.mode}" />
+                <ant:jvmarg value="-Dsmrd.run.mode=${smrd.run.mode}" />
+                <ant:jvmarg value="-Dspring.profiles.active=quote" />
+
+                <classpath>
+                    <pathelement location="../etc" />
+                    <pathelement location="../etc-${smrd.run.mode}" />
+                </classpath>
+            </settings>
+          </run>
+    	</ant:target>
+
+    	<ant:target name="cpt">
+          <run metaproject="sumridge"
+                project="tw-trade"
+                release="1.0+"
+                classname="org.apache.camel.spring.Main"
+                jvm="${sumridge.system.jdk18.java.jvm}"
+                output="${rootDir}/logs/tw-cpt-spawn.log"
+                spawn="true" >
+            <settings>
+                <ant:syspropertyset>
+                    <ant:propertyset refid="context.properties" />
+                </ant:syspropertyset>
+
+                <ant:sysproperty key="smrd.qfj.cfg" value="qfj-tw-cpt.cfg" />
+
+                <ant:sysproperty key="fid.jdbc.name" value="smrd" />
+                <ant:sysproperty key="fid.jdbc.dbconnections" value="2" />
+                <ant:sysproperty key="logback.configurationFile" value="logback.xml" />
+
+                <ant:sysproperty key="twi.d2d.sweep.book" value="Y" />
+
+                <ant:arg line="-ac tw-trade.xml" />
+
+                <ant:jvmarg value="-Dappid=tw.cpt.${smrd.run.mode}" />
+                <ant:jvmarg value="-Dsmrd.run.mode=${smrd.run.mode}" />
+                <ant:jvmarg value="-Dspring.profiles.active=cpt" />
+
+                <classpath>
+                    <pathelement location="../etc" />
+                    <pathelement location="../etc-${smrd.run.mode}" />
+                </classpath>
+            </settings>
+          </run>
+    	</ant:target>
+
+        <ant:target name="offer">
+          <run metaproject="sumridge"
+            project="tw-trade"
+            release="1.0+"
+            classname="org.apache.camel.spring.Main"
+            jvm="${sumridge.system.jdk18.java.jvm}"
+            output="${rootDir}/logs/tw-offer-spawn.log"
+            spawn="true">
+            <settings>
+                <ant:syspropertyset>
+                    <ant:propertyset refid="context.properties" />
+                </ant:syspropertyset>
+
+                <ant:sysproperty key="smrd.qfj.cfg" value="qfj-tw-offer.cfg" />
+                <ant:sysproperty key="fid.jdbc.name" value="smrd" />
+                <ant:sysproperty key="fid.jdbc.dbconnections" value="2" />
+                <ant:sysproperty key="logback.configurationFile" value="logback.xml" />
+
+                <ant:arg line="-ac tw-trade.xml" />
+
+                <ant:jvmarg value="-Dappid=tw.offer.${smrd.run.mode}" />
+                <ant:jvmarg value="-Dsmrd.run.mode=${smrd.run.mode}" />
+                <ant:jvmarg value="-Dspring.profiles.active=offer" />
+                <ant:jvmarg value="-server" />
+                <ant:jvmarg value="-Xmx512M" />
+                <ant:jvmarg value="-Xmn80M" />
+                <ant:jvmarg value="-XX:+UseParNewGC" />
+                <ant:jvmarg value="-XX:+UseConcMarkSweepGC" />
+                <ant:jvmarg value="-XX:CMSInitiatingOccupancyFraction=20" />
+                <ant:jvmarg value="-XX:+UseCMSInitiatingOccupancyOnly" />
+                <classpath>
+                    <pathelement location="../etc" />
+                    <pathelement location="../etc-${smrd.run.mode}" />
+                </classpath>
+            </settings>
+          </run>
+        </ant:target>
+
+    <ant:target name="aiprice">
+        <run metaproject="sumridge"
+            project="tw-trade"
+            release="1.0+"
+            classname="org.apache.camel.spring.Main"
+            jvm="${sumridge.system.jdk18.java.jvm}"
+            output="${rootDir}/logs/tw-aiprice-spawn.log"
+            spawn="true">
+            <settings>
+                <ant:syspropertyset>
+                    <ant:propertyset refid="context.properties" />
+                </ant:syspropertyset>
+
+                <ant:sysproperty key="smrd.qfj.cfg" value="qfj-tw-aiprice.cfg" />
+                <ant:sysproperty key="logback.configurationFile" value="logback-mkt.xml" />
+
+                <ant:sysproperty key="redis.host" value="${smrd.saxm.md.redis.host}" />
+                <ant:sysproperty key="redis.port" value="${smrd.saxm.md.redis.port}" />
+                <ant:sysproperty key="redis.pass" value="${smrd.saxm.md.redis.pass}" />
+                <ant:sysproperty key="redis.db" value="3" />
+                <ant:sysproperty key="redis.client" value="twai-pub" />
+
+                <ant:arg line="-ac tw-trade.xml" />
+
+                <ant:jvmarg value="-Dappid=tw.aiprice.${smrd.run.mode}" />
+                <ant:jvmarg value="-Dsmrd.run.mode=${smrd.run.mode}" />
+                <ant:jvmarg value="-Dspring.profiles.active=aiprice" />
+                <ant:jvmarg value="-server" />
+                <ant:jvmarg value="-Xmx512M" />
+                <ant:jvmarg value="-Xms256M" />
+                <ant:jvmarg value="-Xmn80M" />
+
+                <ant:jvmarg value="-XX:+UseG1GC" />
+
+                <classpath>
+                    <pathelement location="../etc" />
+                    <pathelement location="../etc-${smrd.run.mode}" />
+                </classpath>
+            </settings>
+        </run>
+    </ant:target>
+
+
+</ant:project>

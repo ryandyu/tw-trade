@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:camel="http://camel.apache.org/schema/spring"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+			http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.2.xsd
+       			http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+	<bean id="quickfixjMessageJsonPrinter" class="com.sumridge.quickfixj.transform.QuickfixjMessageJsonPrinter">
+		<constructor-arg value="../etc/FIX50SP2-DS-CORI-DOF.xml" />
+	</bean>
+
+	<bean id="useLatestAggregationStrategy" class="org.apache.camel.processor.aggregate.UseLatestAggregationStrategy" />
+
+	<camel:camelContext>
+		<camel:propertyPlaceholder id="properties" location="classpath:qfj-tw-offer.cfg" />
+		<camel:dataFormats>
+			<camel:jaxb id="filterJaxb" prettyPrint="true" 	contextPath="com.sumridge.xml.jaxb.common:com.sumridge.xml.jaxb.filter" />
+			<camel:jaxb id="offerJaxb"  prettyPrint="true"  contextPath="com.sumridge.xml.jaxb.common:com.sumridge.xml.jaxb.offer" />
+			<camel:jaxb id="statusJaxb" prettyPrint="true"	contextPath="com.sumridge.xml.jaxb.common:com.sumridge.xml.jaxb.status" />
+		</camel:dataFormats>
+		<camel:route id="fixConsumer">
+			<camel:from	uri="quickfix:qfj-tw-offer.cfg?sessionID=FIXT.1.1:{{SenderCompID}}->{{TargetCompID}}" />
+			<camel:onCompletion parallelProcessing="true">
+				<camel:filter>
+					<camel:simple>${in.header.EventCategory} == 'AdminMessageReceived' and ${in.header.MessageType} == 'A'</camel:simple>
+					<camel:process ref="logonProcessor" />
+					<camel:to uri="direct:request" />
+				</camel:filter>
+			</camel:onCompletion>
+			<camel:choice>
+				<camel:when>
+					<camel:simple>${in.header.EventCategory} == 'AppMessageReceived'</camel:simple>
+					<camel:choice>
+						<camel:when>
+							<camel:simple>${in.header.MessageType} == 'y'</camel:simple>
+							<camel:filter>
+								<camel:simple>${body.isSetLastFragment()} and ${body.lastFragment.value}</camel:simple>
+								<camel:to uri="controlbus:route?routeId=mqOfferConsumer&amp;action=start" />
+							</camel:filter>
+							<camel:process ref="securityListProcessor" />
+						</camel:when>
+						<camel:when>
+							<camel:simple>${in.header.MessageType} == 'b'</camel:simple>
+							<camel:process ref="massQuoteAckProcessor" />
+						</camel:when>
+					</camel:choice>
+				</camel:when>
+			</camel:choice>
+		</camel:route>
+		<camel:route id="mqOfferConsumer" autoStartup="false">
+			<camel:from uri="wmq:topic:offer/COR/#" />
+			<camel:from uri="wmq:topic:mkt_data/12/#" />
+			<camel:from uri="direct:offer" />
+			<camel:unmarshal ref="offerJaxb" />
+			<!-- <camel:process ref="offerConsumerProcessor" /> -->
+			<camel:filter>
+				<camel:simple>${body}</camel:simple>
+				<camel:aggregate strategyRef="useLatestAggregationStrategy" completionTimeout="1000">
+					<camel:correlationExpression>
+						<camel:simple>${body.sourceId}-${body.offerId}</camel:simple>
+					</camel:correlationExpression>
+					<camel:choice>
+						<camel:when>
+							<camel:simple>${body.sourceId} == 12</camel:simple>
+							<camel:process ref="omsConsumerProcessor" />
+						</camel:when>
+						<camel:otherwise>
+							<camel:process ref="offerConsumerProcessor" />
+						</camel:otherwise>
+					</camel:choice>
+					<camel:aggregate groupExchanges="true" completionSize="20" completionTimeout="100">
+						<camel:correlationExpression>
+							<camel:constant>true</camel:constant>
+						</camel:correlationExpression>
+						<camel:transform>
+							<camel:spel>#{body.![in.body]}</camel:spel> <!-- Collection Projection .![projectionExpression] -->
+						</camel:transform>
+						<camel:process ref="massQuoteRequestor" />
+						<camel:split>
+							<camel:simple>${body}</camel:simple>
+							<camel:process ref="massQuoteProcessor" />
+							<camel:to uri="direct:request" />
+						</camel:split>
+					</camel:aggregate>
+				</camel:aggregate>
+			</camel:filter>
+		</camel:route>
+		<camel:route id="mqOfferDeskAccountStatusConsumer">
+			<camel:from uri="wmq:topic:status/19" />
+			<camel:unmarshal ref="statusJaxb" />
+			<camel:process ref="offerDeskAccountStatusConsumerProcessor" />
+			<camel:split>
+				<camel:simple>${body}</camel:simple>
+				<camel:to uri="direct:offer" />
+			</camel:split>
+		</camel:route>
+		<camel:route id="mqOfferSecIdFilterStatusConsumer">
+			<camel:from uri="wmq:topic:filter/outbound/#" />
+			<camel:unmarshal ref="filterJaxb" />
+			<camel:process ref="offerSecIdFilterStatusConsumerProcessor" />
+			<camel:filter>
+				<camel:simple>${body}</camel:simple>
+				<camel:to uri="direct:offer" />
+			</camel:filter>
+		</camel:route>
+		<camel:route id="sender">
+			<camel:from uri="direct:request" />
+			<camel:filter>
+				<camel:simple>${body}</camel:simple>
+				<camel:to uri="quickfix:qfj-tw-offer.cfg?sessionID=FIXT.1.1:{{SenderCompID}}->{{TargetCompID}}" />
+			</camel:filter>
+		</camel:route>
+<!--
+		<camel:route id="logger">
+			<camel:from uri="quickfix:qfj-tw-offer.cfg?sessionID=FIXT.1.1:{{SenderCompID}}->{{TargetCompID}}" />
+			<camel:filter>
+				<camel:simple>${in.header.EventCategory} == 'AdminMessageReceived' or ${in.header.EventCategory} == 'AppMessageReceived'</camel:simple>
+				<camel:filter>
+					<camel:simple>${in.header.MessageType} == 'b'</camel:simple>
+					<camel:bean ref="quickfixjMessageJsonPrinter" />
+				</camel:filter>
+			</camel:filter>
+		</camel:route>
+-->
+	</camel:camelContext>
+
+</beans>

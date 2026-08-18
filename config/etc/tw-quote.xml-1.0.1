@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:camel="http://camel.apache.org/schema/spring"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+        				http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+	<bean id="quickfixjMessageJsonPrinter" class="com.sumridge.quickfixj.transform.QuickfixjMessageJsonPrinter">
+		<constructor-arg value="FIX50SP2-DS-CORI.xml" />
+	</bean>
+
+	<camel:camelContext trace="false" messageHistory="false" allowUseOriginalMessage="false">
+
+		<camel:propertyPlaceholder id="properties" location="classpath:qfj-tw-quote.cfg" />
+
+		<camel:dataFormats>
+			<camel:jaxb id="orderJaxb" prettyPrint="true" contextPath="com.sumridge.xml.jaxb.common:com.sumridge.xml.jaxb.order" />
+		</camel:dataFormats>
+
+		<camel:route id="fixConsumer">
+			<camel:from uri="quickfix:qfj-tw-quote.cfg?sessionID=FIXT.1.1:{{SenderCompID}}->{{TargetCompID}}" />
+			<camel:choice>
+				<camel:when>
+					<camel:simple>${in.header.EventCategory} == 'AppMessageReceived'</camel:simple>
+					<camel:choice>
+						<camel:when>
+							<camel:simple>${in.header.MessageType} == 'R'</camel:simple>
+							<camel:multicast parallelProcessing="true">
+								<camel:pipeline>
+									<camel:to uri="seda:incoming" />
+								</camel:pipeline>
+								<camel:pipeline>
+									<camel:bean ref="quoteRequestProcessor" method="ack" />
+									<camel:to uri="direct:request" />
+								</camel:pipeline>
+							</camel:multicast>
+						</camel:when>
+						<camel:when>
+							<camel:simple>${in.header.MessageType} == 'AJ'</camel:simple>
+							<camel:multicast parallelProcessing="true">
+								<camel:pipeline>
+									<camel:to uri="seda:incoming" />
+								</camel:pipeline>
+								<camel:pipeline>
+									<camel:bean ref="quoteResponseProcessor" method="ack" />
+									<camel:to uri="direct:request" />
+								</camel:pipeline>
+							</camel:multicast>
+						</camel:when>
+						<camel:when>
+							<camel:simple>${in.header.MessageType} == '8'</camel:simple>
+							<camel:multicast parallelProcessing="true">
+								<camel:pipeline>
+									<camel:to uri="seda:incoming" />
+								</camel:pipeline>
+								<camel:pipeline>
+									<camel:bean ref="executionReportProcessor" method="ack" />
+									<camel:to uri="direct:request" />
+								</camel:pipeline>
+							</camel:multicast>
+						</camel:when>
+					</camel:choice>
+				</camel:when>
+			</camel:choice>
+		</camel:route>
+		
+		<camel:route id="mqQuoteRequestConsumer">
+			<camel:from uri="wmq:topic:quote_request/19/#" />
+			<camel:unmarshal ref="orderJaxb" />
+			<camel:process ref="quoteRequestConsumerProcessor" />
+			<camel:to uri="direct:request" />
+		</camel:route>
+		<camel:route id="mqTradeRequestConsumer">
+			<camel:from uri="wmq:topic:trade_request/19/#" />
+			<camel:unmarshal ref="orderJaxb" />
+			<camel:process ref="tradeRequestConsumerProcessor" />
+			<camel:to uri="direct:request" />
+		</camel:route>
+
+		<camel:route id="receiver">
+			<!-- <camel:from uri="direct:incoming" /> -->
+			<camel:from uri="seda:incoming" />
+			<camel:choice>
+				<camel:when>
+					<camel:simple>${in.header.MessageType} == 'R'</camel:simple>
+					<camel:pipeline>
+						<camel:process ref="quoteRequestProcessor" />
+						<camel:choice>
+							<camel:when>
+								<camel:simple>${body} is &#39;com.sumridge.xml.jaxb.order.TradeRequest&#39;</camel:simple>
+								<camel:bean ref="tradeRequestConsumerProcessor" method="createTradeRequest" />
+							</camel:when>
+							<camel:otherwise>
+								<camel:bean ref="quoteRequestConsumerProcessor" method="createQuoteRequest" />
+							</camel:otherwise>
+						</camel:choice>
+					</camel:pipeline>
+				</camel:when>
+				<camel:when>
+					<camel:simple>${in.header.MessageType} == 'AJ'</camel:simple>
+					<camel:pipeline>
+						<camel:filter>
+							<camel:simple>${in.body.header.isSetField(97)} != true</camel:simple>
+							<camel:process ref="quoteResponseProcessor" />
+							<camel:filter>
+								<camel:simple>${body}</camel:simple>
+								<camel:choice>
+									<camel:when>
+										<camel:simple>${body} is &#39;com.sumridge.xml.jaxb.order.TradeRequest&#39;</camel:simple>
+										<camel:bean ref="tradeRequestConsumerProcessor" method="createTradeRequest" />
+										<camel:bean ref="quoteRequestConsumerProcessor" method="updateQuoteRequestStatus(${body.platformId}, ${body.platformRequestId}, 1)" />
+									</camel:when>
+									<camel:otherwise>
+										<camel:choice>
+											<camel:when>
+												<camel:simple>${body.statusCode} == 5</camel:simple>
+												<camel:bean ref="quoteRequestConsumerProcessor" method="updateQuoteRequest" />
+											</camel:when>
+											<camel:otherwise>
+												<camel:bean ref="quoteRequestConsumerProcessor" method="updateQuoteRequestStatus(${body.platformId}, ${body.platformRequestId}, ${body.statusCode})" />
+											</camel:otherwise>
+										</camel:choice>
+									</camel:otherwise>
+								</camel:choice>
+							</camel:filter>
+						</camel:filter>
+					</camel:pipeline>
+				</camel:when>
+				<camel:when>
+					<camel:simple>${in.header.MessageType} == '8'</camel:simple>
+					<camel:pipeline>
+						<camel:process ref="executionReportProcessor" />
+						<camel:filter>
+							<camel:simple>${body}</camel:simple>
+							<camel:bean ref="quoteRequestConsumerProcessor" method="updateQuoteRequestStatus" />
+						</camel:filter>
+					</camel:pipeline>
+				</camel:when>
+			</camel:choice>
+		</camel:route>
+		
+		<camel:route id="sender">
+			<camel:from uri="direct:request" />
+			<camel:filter>
+				<camel:simple>${body}</camel:simple>
+				<camel:to
+					uri="quickfix:qfj-tw-quote.cfg?sessionID=FIXT.1.1:{{SenderCompID}}->{{TargetCompID}}" />
+			</camel:filter>
+		</camel:route>
+		
+		<camel:route id="logger">
+			<camel:from	uri="quickfix:qfj-tw-quote.cfg?sessionID=FIXT.1.1:{{SenderCompID}}->{{TargetCompID}}" />
+			<camel:filter>
+				<camel:simple>${in.header.EventCategory} == 'AdminMessageReceived' or ${in.header.EventCategory} == 'AppMessageReceived'</camel:simple>
+				<camel:filter>
+					<camel:simple>${in.header.MessageType} != '0' and ${in.header.MessageType} != 'R'</camel:simple>
+					<camel:bean ref="quickfixjMessageJsonPrinter" />
+				</camel:filter>
+			</camel:filter>
+		</camel:route>
+
+	</camel:camelContext>
+
+</beans>

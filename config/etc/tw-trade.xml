@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:util="http://www.springframework.org/schema/util" xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:tx="http://www.springframework.org/schema/tx" xmlns:camel="http://camel.apache.org/schema/spring"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+        				http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.2.xsd
+        				http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-4.2.xsd
+        				http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-4.2.xsd
+        				http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+	<context:property-placeholder
+		location="file:///${app.properties},classpath:application.properties" />
+
+	<context:annotation-config />
+
+	<context:component-scan base-package="com.sumridge.tw" />
+
+	<util:properties id="traderIds" location="classpath:traderIds.properties" />
+	<util:properties id="accountIds" location="classpath:accountIds.properties" />
+	<util:properties id="partyIds" location="classpath:partyIds.properties" />
+
+	<bean id="jmsJndiTemplate" class="org.springframework.jndi.JndiTemplate">
+		<constructor-arg index="0">
+			<props>
+				<prop key="java.naming.factory.initial">com.sun.jndi.fscontext.RefFSContextFactory</prop>
+				<prop key="java.naming.provider.url">${mq.provider}</prop>
+			</props>
+		</constructor-arg>
+	</bean>
+
+	<bean id="jmsConnectionFactory" class="org.springframework.jndi.JndiObjectFactoryBean">
+		<property name="jndiTemplate" ref="jmsJndiTemplate" />
+		<property name="jndiName" value="FID.CF" />
+	</bean>
+
+	<bean id="jmsConfig" class="org.apache.camel.component.jms.JmsConfiguration">
+		<property name="connectionFactory" ref="jmsConnectionFactory" />
+	</bean>
+
+	<bean id="wmq" class="org.apache.camel.component.jms.JmsComponent">
+		<property name="configuration" ref="jmsConfig" />
+	</bean>
+
+	<bean id="stsOrderWebServiceService" class="com.sumridge.etrade.ws.StsOrderWebServiceService" />
+
+	<bean id="stsOrderWebServiceInterface" factory-bean="stsOrderWebServiceService"
+		factory-method="getStsOrderWebServicePort" />
+
+	<bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource"
+		destroy-method="close" p:driverClassName="${smrd.dbdriver}" p:url="${smrd.dburl}"
+		p:username="${smrd.dbuser}" p:password="${smrd.dbpassword}" />
+
+	<bean id="transactionManager"
+		class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<tx:annotation-driven />
+
+	<bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+		<property name="basePackage" value="com.sumridge.tw.mapper" />
+	</bean>
+
+	<bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+		<property name="dataSource" ref="dataSource" />
+		<property name="typeAliasesPackage" value="com.sumridge.tw.bean" />
+                <!--<property name="mapperLocations" value="com/sumridge/tw/mapper/*.xml" />-->
+                <property name="mapperLocations">
+                        <list>
+                                <value>classpath*:com/sumridge/tw/mapper/xml/*.xml</value>
+                                <value>#{'${smrd.dbtype}' == 'ORACLE' ? 'classpath*:com/sumridge/tw/mapper/xml/oracle/*.xml' : 'classpath*:com/sumridge/tw/mapper/xml/sqlserver/*.xml'}</value>
+                        </list>
+                </property>
+	</bean>
+
+	<beans profile="cpt">
+		<import resource="tw-cpt.xml" />
+	</beans>
+
+	<beans profile="quote">
+		<import resource="tw-quote.xml" />
+	</beans>
+
+	<beans profile="offer">
+		<import resource="tw-offer.xml" />
+	</beans>
+
+        <beans profile="aiprice">
+                <import resource="tw-aiprice.xml" />
+        </beans>
+
+</beans>

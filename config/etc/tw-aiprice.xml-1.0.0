@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns:util="http://www.springframework.org/schema/util"
+	xmlns:camel="http://camel.apache.org/schema/spring"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+			http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+       			http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+	<import resource="redis-config.xml"/>
+
+	<bean id="useLatestAggregationStrategy" class="org.apache.camel.processor.aggregate.UseLatestAggregationStrategy" />
+	
+	<bean id="quickfixjMessageJsonPrinter" class="com.sumridge.quickfixj.transform.QuickfixjMessageJsonPrinter">
+		<constructor-arg value="FIX44-AIPRICE.xml" />
+	</bean>
+	
+	<camel:camelContext trace="false" messageHistory="false" allowUseOriginalMessage="false">
+		<camel:propertyPlaceholder id="properties" location="classpath:${smrd.qfj.cfg}" />
+
+		<camel:jmxAgent id="agent" disabled="true" />
+
+		<camel:dataFormats>
+			<camel:jaxb id="modelJaxb" prettyPrint="true" contextPath="com.sumridge.xml.jaxb.common:com.sumridge.xml.jaxb.model" />
+		</camel:dataFormats>
+		
+		<camel:route id="init">
+        		<camel:from uri="timer://runOnce?repeatCount=1" />
+			<camel:bean ref="twTrade" method="loadXrefs" />
+		     	<camel:to uri="controlbus:route?routeId=fixConsumer&amp;action=start" /> 
+        	</camel:route>
+
+
+		<camel:route id="fixConsumer" autoStartup="false" streamCache="false" >
+			<camel:from uri="quickfix:{{smrd.qfj.cfg}}?sessionID=FIX.4.4:{{SenderCompID}}->{{TargetCompID}}&amp;lazyCreateEngine=true" />
+			<camel:process ref="fixMessageProcessor" />
+<!--	
+     	                <camel:threads maxPoolSize="24">
+				<camel:choice>
+					<camel:when>
+						<camel:simple>${in.header.EventCategory} == 'AppMessageReceived' and ${in.header.MessageType} == 'W'</camel:simple>
+						<camel:to uri="seda:mktFull?size=10000" />
+					</camel:when>
+					<camel:when>
+						<camel:simple>${in.header.EventCategory} == 'AppMessageReceived' and ${in.header.MessageType} == 'X'</camel:simple>
+						<camel:to uri="seda:mktInc?size=10000" />
+					</camel:when>
+				</camel:choice>
+                        </camel:threads>
+-->		
+		</camel:route>
+		
+		<camel:route id="mktDataFull">
+			<camel:from uri="seda:mktFull" />
+			<camel:process ref="marketDataFullProcessor" />
+        		<camel:to uri="seda:pub" />
+		</camel:route>
+			
+		<camel:route id="mktDataInc">
+			<camel:from uri="seda:mktInc" />
+			<camel:process ref="marketDataIncProcessor" />
+        		<camel:to uri="seda:pub" />
+		</camel:route>
+			
+        	<camel:route id="publisher">
+        		<camel:from uri="seda:pub"/>
+        		<camel:filter>
+        			<camel:simple>${body}</camel:simple>
+        		
+        			<camel:aggregate strategyRef="useLatestAggregationStrategy" completionInterval="120000">
+					<camel:correlationExpression>
+						<camel:simple>${body.securityId}</camel:simple>
+					</camel:correlationExpression>
+					<camel:aggregate groupExchanges="true" completionSize="5000" completionTimeout="5000">
+						<camel:correlationExpression>
+							<camel:constant>true</camel:constant>
+						</camel:correlationExpression>
+						<camel:transform>
+							<camel:spel>#{body.![in.body]}</camel:spel>  <!-- SpEL collection projection -->
+						</camel:transform>
+						<camel:bean ref="redisProcessor" method="publishModels" />
+					</camel:aggregate>
+				</camel:aggregate>
+        		
+        		<!-- <camel:process ref="redisProcessor" /> -->
+        		
+        		</camel:filter>
+    		</camel:route>
+    				
+		<!--
+ 		<camel:route id="logger">
+			<camel:from uri="quickfix:{{smrd.qfj.cfg}}?sessionID=FIX.4.4:{{SenderCompID}}->{{TargetCompID}}"/>
+			<camel:filter>
+				<camel:simple>${in.header.EventCategory} == 'AdminMessageReceived' or ${in.header.EventCategory} == 'AppMessageReceived'</camel:simple>
+				<camel:filter>
+					<camel:simple>${in.header.MessageType} != '0' and ${in.header.MessageType} != 'R'</camel:simple>
+					<camel:bean ref="quickfixjMessageJsonPrinter" />
+				</camel:filter>
+			</camel:filter>
+		</camel:route>
+		-->
+	
+	</camel:camelContext>
+
+</beans>
+

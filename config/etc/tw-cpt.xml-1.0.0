@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:camel="http://camel.apache.org/schema/spring"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+        				http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+	<bean id="quickfixjMessageJsonPrinter"
+		class="com.sumridge.quickfixj.transform.QuickfixjMessageJsonPrinter">
+		<constructor-arg value="FIX50SP2-PT.xml" />
+	</bean>
+
+	<camel:camelContext>
+		<camel:propertyPlaceholder id="properties"
+			location="classpath:qfj-tw-cpt.cfg" />
+		<camel:dataFormats>
+			<camel:jaxb id="tradeJaxb" prettyPrint="true"
+				contextPath="com.sumridge.xml.jaxb.common:com.sumridge.xml.jaxb.trade" />
+		</camel:dataFormats>
+		<camel:route id="fixConsumer">
+			<camel:from
+				uri="quickfix:qfj-tw-cpt.cfg?sessionID=FIXT.1.1:{{SenderCompID}}->{{TargetCompID}}" />
+			<camel:choice>
+				<camel:when>
+					<camel:simple>${in.header.EventCategory} == 'AppMessageReceived'</camel:simple>
+					<camel:choice>
+						<camel:when>
+							<camel:simple>${in.header.MessageType} == 'AE'</camel:simple>
+							<camel:multicast>
+								<camel:pipeline>
+									<camel:choice>
+										<camel:when>
+											<camel:simple>${in.body.tradeReportType.value} == '101' or ${in.body.tradeReportType.value} == '108'</camel:simple>
+											<camel:process ref="tradeCaptureReportProcessor" />
+											<camel:filter>
+												<camel:simple>${body}</camel:simple>
+												<camel:bean ref="tradeCaptureProcessor" />
+											</camel:filter>
+										</camel:when>
+										<camel:when>
+											<camel:simple>${in.body.tradeReportType.value} == '103' or ${in.body.tradeReportType.value} == '104'</camel:simple>
+											<camel:setHeader headerName="subject">
+												<camel:constant>Trade Capture Report (CXL/CORR)</camel:constant>
+											</camel:setHeader>
+											<camel:transform>
+												<camel:simple>Trade Capture Report\n${in.body}</camel:simple>
+											</camel:transform>
+											<camel:to
+												uri="smtp://{{smtp.host}}?from=do-not-reply@sumridge.com&amp;to=john.jiang@sumridge.com" />
+										</camel:when>
+									</camel:choice>
+								</camel:pipeline>
+								<camel:pipeline>
+									<camel:bean ref="tradeCaptureReportProcessor"
+										method="acknowledge" />
+									<camel:to uri="direct:request" />
+								</camel:pipeline>
+							</camel:multicast>
+						</camel:when>
+						<camel:when>
+							<camel:simple>${in.header.MessageType} == 'AS'</camel:simple>
+							<camel:multicast>
+								<camel:pipeline>
+									<camel:process ref="allocationReportProcessor" />
+									<camel:split>
+										<camel:simple>${body}</camel:simple>
+										<camel:choice>
+											<camel:when>
+												<camel:simple>${body.allocTransType} == '0'</camel:simple>
+												<camel:bean ref="allocationServiceImpl" method="insert" />
+											</camel:when>
+											<camel:when>
+												<camel:simple>${body.allocTransType} == '1'</camel:simple>
+												<camel:bean ref="allocationServiceImpl" method="update" />
+											</camel:when>
+											<camel:otherwise>
+												<camel:bean ref="allocationServiceImpl" method="delete" />
+											</camel:otherwise>
+										</camel:choice>
+									</camel:split>
+								</camel:pipeline>
+								<camel:pipeline>
+									<camel:bean ref="allocationReportProcessor" method="acknowledge" />
+									<camel:to uri="direct:request" />
+								</camel:pipeline>
+							</camel:multicast>
+						</camel:when>
+					</camel:choice>
+				</camel:when>
+			</camel:choice>
+		</camel:route>
+		<camel:route id="sender">
+			<camel:from uri="direct:request" />
+			<camel:filter>
+				<camel:simple>${body}</camel:simple>
+				<camel:to
+					uri="quickfix:qfj-tw-cpt.cfg?sessionID=FIXT.1.1:{{SenderCompID}}->{{TargetCompID}}" />
+			</camel:filter>
+		</camel:route>
+		<camel:route id="logger">
+			<camel:from
+				uri="quickfix:qfj-tw-cpt.cfg?sessionID=FIXT.1.1:{{SenderCompID}}->{{TargetCompID}}" />
+			<camel:filter>
+				<camel:simple>${in.header.EventCategory} == 'AdminMessageReceived'
+					or ${in.header.EventCategory} == 'AppMessageReceived'</camel:simple>
+				<camel:filter>
+					<camel:simple>${in.header.MessageType} != '0'</camel:simple>
+					<camel:bean ref="quickfixjMessageJsonPrinter" />
+				</camel:filter>
+			</camel:filter>
+		</camel:route>
+	</camel:camelContext>
+
+</beans>
